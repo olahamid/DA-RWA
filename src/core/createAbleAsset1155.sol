@@ -18,7 +18,7 @@ pragma solidity 0.8.22;
     /// State Variables ///
     ///////////////////////
   address private RWA_Manager;
-   mapping (uint => string) public tokenURI;
+   mapping (uint id => mapping (string uri => bool)) public TokenURI;
    mapping (address _manager=> uint _ids) managerIDs;
    uint8 public MAX_MINTS = 10;
    
@@ -27,24 +27,35 @@ pragma solidity 0.8.22;
     //////////////
   error invalidRetriveData();
   error invalid_Manager();
+  error RWAInvalid_ArrayLength();
+  error RWAExceed_MaxMint();
+  error RWAAssetAlreadyExists();
+  error RWA_InvalidBurnAsset();
     ///////////////////
     /// Constructor ///
     ///////////////////
-   constructor (
-    address _to,
+  constructor (
     uint256[] memory _id,
     uint256[] memory _amount,
     bytes memory _data,
-    string memory _uri, 
-    address _rwaMananger, 
-    address _FactoryCA) ERC1155(_uri){
+    string[] memory _uri, 
+    address _rwaMananger
+    // note- sort out a good way to input the right ERC1155 uri into the instance below.
+  ) ERC1155(""){
+
+    if (_id.length != _amount.length || _uri.length != _id.length) revert RWAInvalid_ArrayLength();
+    if (_id.length > MAX_MINTS) revert RWAExceed_MaxMint();
       _rwaMananger = RWA_Manager; //
       
-    for (uint i = 0; i < MAX_MINTS; ++i) {
-      _setURI(_id[i], _uri);
-      managerIDs[_rwaMananger] = _id[i];
+    for (uint i = 0; i < _id.length; ++i) {
+      uint256 assetID = _id[i];
+      string memory assetURI = _uri[i];
+      if (TokenURI[assetID][assetURI] == true) revert RWAAssetAlreadyExists();
+      managerIDs[_rwaMananger] = assetID;
+
+      _setURI(_id[i], _uri[i]);
     }
-    batchMint(_to, _id, _amount, _data);
+    batchMint(_rwaMananger, _id, _amount, _data);
    }
     function mint(
       address _to,
@@ -74,7 +85,7 @@ pragma solidity 0.8.22;
       uint _id, 
       string memory _uri
     ) private {
-      tokenURI[_id] = _uri;
+      TokenURI[_id][_uri] = true;
       super._setURI(_uri);
     }
     function setURI(
@@ -85,16 +96,6 @@ pragma solidity 0.8.22;
         revert invalid_Manager();
       }
       _setURI(_id,_uri);
-    }
-    
-    function retriveURI(
-      uint _id) 
-      public view returns(string memory) {
-      string memory _tokenURI = tokenURI[_id];
-      if (bytes(_tokenURI).length == 0 ) {
-        revert invalidRetriveData();
-      }
-      return _tokenURI;
     }
 
     function burn(
@@ -111,11 +112,27 @@ pragma solidity 0.8.22;
     function batchBurn(
       address _manager,
       uint256[] memory _id,
-      uint256[] memory _amount
+      uint256[] memory _amount,
+      string[] memory _uri
     ) external {
+      for (uint i = 0; i < MAX_MINTS; ++i) {
+        bool isAssetType = TokenURI[_id[i]][_uri[i]];
+        if (isAssetType != true) {
+          revert RWA_InvalidBurnAsset();
+        }
+      }
       if (msg.sender != RWA_Manager ) {
         revert invalid_Manager();
       } 
       _burnBatch(_manager, _id, _amount);
+    }
+
+    function SetRWAManager(
+      address _newManager
+    ) external {
+      if (msg.sender != RWA_Manager) {
+        revert invalid_Manager();
+      }
+      RWA_Manager = _newManager;
     }
  }
