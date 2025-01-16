@@ -18,7 +18,7 @@
 //         - view and pure functions
 
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.24;
+pragma solidity 0.8.22;
 /**
  * @title RealEstateSource.sol
  * @author Ola Hamid

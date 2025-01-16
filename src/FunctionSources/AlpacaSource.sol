@@ -19,7 +19,7 @@
 
 
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.24;
+pragma solidity 0.8.22;
 /**
  * @title AlpacaSource.sol
  * @author Ola Hamid
