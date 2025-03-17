@@ -18,7 +18,7 @@
 //         - view and pure functions
 
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.22;
+pragma solidity ^0.8.22;
 
 /**
  * @title AlpacaSource.sol
@@ -33,6 +33,10 @@ import {IDACreateAbleAsset1155} from "../interface/IDACreateAbleAsset1155.sol";
 import {DACreateAbleAsset1155} from "../core/DACreateAbleAsset1155.sol";
 import {DALibrary} from "../Library/DALibrary.sol";
 import {DARWAFunctionSrc} from "../FunctionSources/DARWAFunctionSrc.sol";
+import {DAEngine} from "../core/DAEngine.sol";
+import { MonadexV1Types } from "../../monadex-v1-protocol/src/library/MonadexV1Types.sol";
+
+
 
 contract DAFactory is Ownable {
 
@@ -43,12 +47,15 @@ contract DAFactory is Ownable {
     IDACreateAbleAsset1155 private immutable i_DACreateAbleAsset1155;
     DACreateAbleAsset1155 private s_Asset;
     DARWAFunctionSrc private s_FunctionSource;
+    DAEngine[] public s_Engine;
 
     DALibrary.FunctionSourceConstructorArgs public functionSourceConstructorArgs;
+    bytes public DARWAEngineBytecode;
 
     address private s_ChainLinkTokenAddr;
     address private s_ChainLinkOracle;
     address private i_engineAddress;
+    uint256 private s_TotalAssetScore;
 
     uint256 private s_Fee;
 
@@ -76,7 +83,8 @@ contract DAFactory is Ownable {
     function createAsset(
         DALibrary.AssetCreationParams memory _assetCreationParams,
         DALibrary.APIAssetDetails memory _assetDetails,
-        DALibrary.FunctionSourceConstructorArgs memory _functionSourceConstructorArgs
+        DALibrary.FunctionSourceConstructorArgs memory _functionSourceConstructorArgs,
+        MonadexV1Types.AddLiquidity memory _addLiquidityParams
     ) external 
     returns(uint256, bytes32 AssetCurrentPrice)
     {
@@ -110,6 +118,8 @@ contract DAFactory is Ownable {
             _assetCreationParams.platformBytes,
             FunctionSrc
         );
+        uint64 nonce = 0;
+        DARWAEngine(FunctionSrc, nonce, _assetCreationParams, _addLiquidityParams);
         emit DALibrary.FunctionSourceCreated(_assetCreationParams.jobId, FunctionSrc);
         emit DALibrary.PriceRequested(AssetCurrentPrice, _assetDetails.assetName, price, timestamp);
         emit DALibrary.AssetCreated(
@@ -118,8 +128,8 @@ contract DAFactory is Ownable {
             _assetCreationParams.ids,
             _assetCreationParams.amounts
         );
+        s_TotalAssetScore++;
         return (price, AssetCurrentPrice);
-
     }
     function _Create1155Asset(
         DALibrary.Asset memory _asset,
@@ -163,11 +173,36 @@ contract DAFactory is Ownable {
         );
 
         // note send 20% of the total RWA asset to the RWA manager. 
-        // send the rest to the engine contract
+        
+
 
     }
 
-    function DARWAEngine() public {
+    function DARWAEngine(
+        address FunctionSrc,
+        uint64 nonce,
+        DALibrary.AssetCreationParams memory _assetCreationParams,
+        MonadexV1Types.AddLiquidity memory _addLiquidityParams
+    ) public returns(DAEngine engine) {
+        bytes32 salt = keccak256(abi.encodePacked(_assetCreationParams.ids, nonce++, s_TotalAssetScore));
+
+        bytes memory bytecodeWithArgs = abi.encodePacked(DARWAEngineBytecode,
+            abi.encode(
+                _assetCreationParams.asset,
+                _assetCreationParams.ids,
+                _assetCreationParams.amounts,
+                _assetCreationParams.data,
+                _assetCreationParams.uris,
+                _assetCreationParams.platformBytes,
+                FunctionSrc
+            ));
+            assembly {
+                engine := create2(0, add(bytecodeWithArgs, 0x20), mload(bytecodeWithArgs), salt)
+                if iszero(extcodesize(engine)) { revert(0, 0) }          
+            }
+            s_Engine.push(engine);
+            engine.addLiquid( _addLiquidityParams);
+        // send the rest to the engine contract by adding LIQ
 
     }
 
@@ -237,4 +272,5 @@ contract DAFactory is Ownable {
     returns (address) {
         return address(i_DACreateAbleAsset1155);
     }
+    
 }

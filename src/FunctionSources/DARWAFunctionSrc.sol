@@ -18,7 +18,7 @@
 //         - view and pure functions
 
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.22;
+pragma solidity ^0.8.22;
 
 /**
  * @title AlpacaSource.sol
@@ -137,7 +137,7 @@ contract DARWAFunctionSrc is ChainlinkClient, FunctionsClient, Ownable {
     address trader,
     uint256 amount
    )
-   internal
+   public
    returns(bytes32 requestId) {
     FunctionsRequest.Request memory req;
     req.initializeRequestForInlineJavaScript(s_buySource);
@@ -170,7 +170,7 @@ contract DARWAFunctionSrc is ChainlinkClient, FunctionsClient, Ownable {
     address trader,
     uint256 amount 
    ) 
-   internal
+   public
    returns(bytes32 requestId) {
         FunctionsRequest.Request memory req;
         req.initializeRequestForInlineJavaScript(s_sellSource);

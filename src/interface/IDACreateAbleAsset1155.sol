@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.22;
+pragma solidity ^0.8.22;
 
 interface  IDACreateAbleAsset1155 {
     function mint(address _to,uint256 _id,uint256 _amount, bytes memory _data) external;

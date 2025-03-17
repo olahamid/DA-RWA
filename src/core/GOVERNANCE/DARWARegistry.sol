@@ -251,6 +251,7 @@ contract DARWARegistry is AccessControl, Pausable, IDARWARegistry {
         bytes memory platformBytes = s_PlatformBytes[platformAddress][assetId];
         return s_Assets[platformBytes].assetActive;
     }
+    
 
     function getFeeOnPlatform(
 
