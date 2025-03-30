@@ -1,21 +1,3 @@
-// Layout:
-//     - pragma
-//     - imports
-//     - interfaces, libraries, contracts
-//     - type declarations
-//     - state variables
-//     - events
-//     - errors
-//     - modifiers
-//     - functions
-//         - constructor
-//         - receive function (if exists)
-//         - fallback function (if exists)
-//         - external
-//         - public
-//         - internal
-//         - private
-//         - view and pure functions
 
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.22;
@@ -36,15 +18,17 @@ import {Initializable} from "../../lib/openzeppelin-contracts-upgradeable/contra
 import {UUPSUpgradeable} from "../../lib/openzeppelin-contracts-upgradeable/contracts/proxy/utils/UUPSUpgradeable.sol";
 import {IERC1155} from "../../lib/openzeppelin-contracts/contracts/token/ERC1155/IERC1155.sol";
 import {IERC20} from "../../lib/openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
-import {IMonadexV1Router} from "../../monadex-v1-protocol/src/interfaces/IMonadexV1Router.sol";
-import { MonadexV1Types } from "../../monadex-v1-protocol/src/library/MonadexV1Types.sol";
+import {IBubbleV1Router} from "../../bubble-v1-protocol/src/interfaces/IBubbleV1Router.sol";
+import { BubbleV1Types } from "../../bubble-v1-protocol/src/library/BubbleV1Types.sol";
+import {DARWARegistry} from "../core/GOVERNANCE/DARWARegistry.sol";
 
 contract DAEngine is OwnableUpgradeable, PausableUpgradeable, UUPSUpgradeable {
-
+//  NOTE: ADD Chainlink Keepers TO ALLow the contract to have a contract to call all position 
     DACreateAbleAsset1155 public s_DAAsset1155;
     DARWAFunctionSrc public s_DARWAFunctionSrc;
     IERC20[] public s_supportedToken;
-    IMonadexV1Router public monadexRouter;
+    IBubbleV1Router public BubbleRouter;
+    DARWARegistry public s_DARWARegistry;
 
     uint256 constant private precision = 1e18;
     uint256 constant private minSellOutInpercentile = 50;
@@ -62,6 +46,8 @@ contract DAEngine is OwnableUpgradeable, PausableUpgradeable, UUPSUpgradeable {
     address public ERC1155Token;
 
     mapping (address => uint) public userAssets;
+    mapping (uint256 => address ) public s_AssetPair;
+    mapping (address => Position) public s_ReceiversPosition;
 
 
     enum healthStatus {
@@ -75,7 +61,16 @@ contract DAEngine is OwnableUpgradeable, PausableUpgradeable, UUPSUpgradeable {
         address[] _path;
         address _receiver;
         uint256 _deadline;
-        MonadexV1Types.Raffle _raffle;
+        BubbleV1Types.Raffle _raffle;
+    }
+
+    struct Position {
+        uint256 entryPrice;
+        uint256 amount;
+        uint256 buyThreshold;
+        uint256 sellThreshold;
+        address[] path;
+        bool active;
     }
     
     modifier isSupportedToken(address _supportedTokenIn, address _supportedTokenOut) {
@@ -88,13 +83,10 @@ contract DAEngine is OwnableUpgradeable, PausableUpgradeable, UUPSUpgradeable {
     }
         _;
     }
-    //DARWAFunctionSrc public DARWAFunctionSrc;
     constructor () {
         _disableInitializers();
     }
 
-    // this should be used to kick start the engine contracts, what are the var you think it should have?
-    //  AssetCreationParams struct, Asset struct, 
     function Initialize(
         address _DAAsset1155,
         address _FunctionSrc,
@@ -108,8 +100,9 @@ contract DAEngine is OwnableUpgradeable, PausableUpgradeable, UUPSUpgradeable {
         assetId = _AssetId;
         requestId = _requestId;
         assetName = _assetName;
-        //FIXME: make a defualt supported token or add a param to set this
         s_supportedToken.push(IERC20(_supportedToken));
+
+        emit DALibrary.Initialized(_DAAsset1155, _FunctionSrc, _AssetId, _supportedToken, _requestId, _assetName);
     }
 
     function _checkNoZeroAddress(address _address) internal pure {
@@ -120,39 +113,31 @@ contract DAEngine is OwnableUpgradeable, PausableUpgradeable, UUPSUpgradeable {
         if (_amount == 0) revert DALibrary.DARWA_ZEROAmount();
     }
 
-    /* note: there are 4 main functions here 
+    /* note: 4 main functions here 
     1. directBuy 
     2. directSell
     3. takePosition
     4. closePosition
-    helthcheck
+    5. helthcheck
     */
 
     /*---------------------------------DirectBuy---------------------------------*/
-    /*PARAM
-    amountToBuy - amount to
-    address receiving -
-    uint ID
-    */
    function directBuy(
         uint256 _amountIn,
         uint256 _amountOutMin,
         address[] memory _path,
         address _receiver,
         uint256 _deadline,
-        MonadexV1Types.Raffle memory _raffle
-   ) external /*isSupportedToken()*/ {
-        //CHECKS 
-    // check that the supported token to buy is RIGHT
-    // 1. the asset most not be killed
-    // 2. check for zero values and address  
-    // check that the health is good
-        //fixme: add a check tha the asset is nt dead
+        BubbleV1Types.Raffle memory _raffle
+   ) external returns (uint256[] memory _amount){ 
+        if ( s_DARWARegistry.getAssetKilled(assetId)) {
+            revert DALibrary.DARWA_AssetKilled();
+        }
         _checkNoZeroAddress(_receiver);
         _checkZeroAmount(_amountIn);
         // check that the asset
         healthCheck(address(this));
-        // my aiim for the next check is to make sure that the amount swaping out in supported token and amount swapping is the erc1155 token
+
         for (uint256 i=0; i< s_supportedToken.length; ++i) {
             if (_path[0] != address(s_supportedToken[i]) || _path[1] != address(ERC1155Token)) {
                 revert DALibrary.DARWA_InvalidPathAddress(_path[0], _path[1]);
@@ -160,19 +145,23 @@ contract DAEngine is OwnableUpgradeable, PausableUpgradeable, UUPSUpgradeable {
         }
         
         // INTERACTIONS
-        // 1. for direct buy users directly buy the asset from the engine contract by making a swap from the supported token to the desired RWA token. 
-        // 2. send the reciever the asset token from the engine contract
-        //3. also the function source contract make a buy for them
-        // FIXME: i dont know how to make sure the path is taking USDC and giving the erc1155 token. need to fix that
-        _swapBuy(_amountIn, _amountOutMin, _path, _receiver, _deadline, _raffle);
+        for (uint256 i = 0; i < s_supportedToken.length; ++i) {
+        
+            if (_path[0] != address(s_supportedToken[i]) || _path[1] != address(ERC1155Token)) {
+            revert DALibrary.DARWA_InvalidPathAddress(_path[0], _path[1]);
+            }
+        }
+        (_amount, ) = _swapBuyOrSell(_amountIn, _amountOutMin, _path, _receiver, _deadline, _raffle);
+        
         s_DARWAFunctionSrc.requestBuyAsset(assetName, assetId, _receiver, _amountIn);
-
          // effect 
-        // 1. store their address, id and to the amount bought in a maping
-        // 2. check the total amount bought 
          uint256 previousAmout = userAssets[msg.sender];
         userAssets[msg.sender] = previousAmout + _amountIn;
         totalAssetAmont += _amountIn;
+
+        emit DALibrary.DirectBuy(_receiver, _amountIn, _amount[_amount.length - 1], block.timestamp);
+        
+        return _amount;
    }
     /*---------------------------------DirectSell---------------------------------*/
     function directSell(
@@ -181,13 +170,12 @@ contract DAEngine is OwnableUpgradeable, PausableUpgradeable, UUPSUpgradeable {
         address[] memory _path,
         address _receiver,
         uint256 _deadline,
-        MonadexV1Types.Raffle memory _raffle
-    ) public {
+        BubbleV1Types.Raffle memory _raffle
+    ) public 
+    returns(uint256[] memory _amount) {
         _checkNoZeroAddress(_receiver);
         _checkZeroAmount(_amountIn);
-        // check that the user has enough bought in the mapping
         uint256 sellerBalance = userAssets[msg.sender];
-        // check for zero values and address
         if ( _amountIn > sellerBalance ) {
             revert DALibrary.DARWA_InsufficientBalance(sellerBalance);
         }
@@ -199,31 +187,18 @@ contract DAEngine is OwnableUpgradeable, PausableUpgradeable, UUPSUpgradeable {
         healthCheck(pool);
         
             // EFFECT
-    // 1. store their address, id and to the amount sell in a maping
-    // 2. update the total amount sell
         uint256 previousAmout = userAssets[msg.sender];
         userAssets[msg.sender] = previousAmout - _amountIn;
         totalAssetAmont -= _amountIn;
         
-        // INTERACTIONS
-        // INTERACTIONS
-        // 1. for direct sell users directly sell asset from the engine contract by making a swap from desired RWA token to the supported asset. 
-        // 2. send the reciever the supported asset 
-        //3. also the function source contract make a sell for them
-        
-        // do an if statement to check that the path coming in for sell is the ERC1155 token and the path going out to the user is ERC20 supported token. if not revert on invalid Path address
-
-        _swapBuy(_amountIn, _amountOutMin, _path, _receiver, _deadline, _raffle);
+        (_amount, ) = _swapBuyOrSell(_amountIn, _amountOutMin, _path, _receiver, _deadline, _raffle);
         s_DARWAFunctionSrc.requestSellAsset(assetName, assetId, _receiver, _amountIn);
+
+        emit DALibrary.DirectSell(_receiver, _amountIn, _amount[_amount.length - 1], block.timestamp);
+return _amount;
     }
     /*---------------------------------TakePosition---------------------------------*/
-       /*PARAM
-    amountToBuy - amount to
-    address receiving 
-    uint ID
-    BuyOutCollateral 
-    SellOutCollateral
-    */
+
     function takePosition(
         uint256 _buyOutCollateral,
         uint256 _sellOutCollateral,
@@ -232,15 +207,12 @@ contract DAEngine is OwnableUpgradeable, PausableUpgradeable, UUPSUpgradeable {
         address[] memory _path,
         address _receiver,
         uint256 _deadline,
-        MonadexV1Types.Raffle memory _raffle
+        BubbleV1Types.Raffle memory _raffle
     ) 
-    public {
-    //CHECKS 
-    // check that the supported token to buy is RIGHT
-    // 1. the asset most not be killed
-    // 2. check for zero values and address 
-    // check that the max buyout collateral and sell out collateral isnt reached yet.
-    //fixme: add a check tha the asset is nt dead
+    public returns(uint256[] memory _amount) {
+    if ( s_DARWARegistry.getAssetKilled(assetId)) {
+        revert DALibrary.DARWA_AssetKilled();
+    }
     _checkNoZeroAddress(_receiver);
     _checkZeroAmount(_amountIn);
     uint256 minSellPrecision = (precision * minSellOutInpercentile) / percentile;
@@ -248,55 +220,103 @@ contract DAEngine is OwnableUpgradeable, PausableUpgradeable, UUPSUpgradeable {
     if ((_buyOutCollateral < minSellPrecision) || (_sellOutCollateral > maxSellOutPrecision)) {
         revert DALibrary.DARWA_InvalidPrecision();
         }
-    
+
+    bool validPath = false;
     for (uint256 i=0; i< s_supportedToken.length; ++i) {
-        // fixme can you check that my condition is correct and true?
-        if ((_path[0] != address(ERC1155Token) || _path[1] != address(s_supportedToken[i])) && _path[0] != address(s_supportedToken[i]) || _path[1] != address(ERC1155Token))  {
-            revert DALibrary.DARWA_InvalidPathAddress(_path[0], _path[1]);
+        if ((_path[0] == address(s_supportedToken[i]) && _path[1] == ERC1155Token) || (_path[0] == ERC1155Token && _path[1] == address(s_supportedToken[i]))) {
+            validPath = true;
+            break;
         }
     }
-            
-    // INTERACTIONS
-    // 1. for direct buy users directly buy the asset from the engine contract by making a swap from the supported token to the desired RWA token. 
-    // 2. send the reciever the asset token from the engine contract
-    //3. also the function source contract make a buy for them
-    (uint256[] memory amountsOut, ) = _swapBuy(_amountIn, _amountOutMin, _path, _receiver, _deadline, _raffle);
-    s_DARWAFunctionSrc.requestBuyAsset(assetName, assetId, _receiver, _amountIn);
-    uint256 amountOut = amountsOut[amountsOut.length - 1];
-    // effect
-    uint256 minSellAmount = _amountIn *  minSellPrecision;
-    uint256 maxSellAmount = _amountIn * maxSellOutPrecision;
-    // i dont know how to make it autonomous in a way that every time an amont out gets less than the minSell it automatically sells, 
     
-    if ( amountOut < minSellAmount * amountOut) {
-        _swapBuy(_amountIn, _amountOutMin, _path, _receiver, _deadline, _raffle);
-        s_DARWAFunctionSrc.requestSellAsset(assetName, assetId, _receiver, _amountIn);
+    if (!validPath == false) {
+        revert DALibrary.DARWA_InvalidPathAddress(_path[0], _path[1]);
     }
-    if ( amountOut > maxSellAmount  * amountOut ) {
-        _swapBuy(_amountIn, _amountOutMin, _path, _receiver, _deadline, _raffle);
-        s_DARWAFunctionSrc.requestSellAsset(assetName, assetId, _receiver, _amountIn);
+
+
+            
+    (_amount, ) = _swapBuyOrSell(_amountIn, _amountOutMin, _path, _receiver, _deadline, _raffle);
+    s_DARWAFunctionSrc.requestBuyAsset(assetName, assetId, _receiver, _amountIn);
+    
+    // effects
+    uint256 previousAmount = userAssets[msg.sender];
+    userAssets[msg.sender] = previousAmount + _amountIn;
+    totalAssetAmont += _amountIn;
+    // Create or update position
+    Position storage position = s_ReceiversPosition[_receiver];
+    position.entryPrice = getERC1155TokenPrice();
+    position.amount = _amountIn;
+    position.buyThreshold = _buyOutCollateral;
+    position.sellThreshold = _sellOutCollateral;
+    position.path = _path;
+    position.active = true;
+
+    // check psition thresholds
+    checkPositionThresholds(_receiver);
+
+    emit DALibrary.PositionTaken(_receiver, _amountIn, position.entryPrice, _buyOutCollateral, _sellOutCollateral);    
+    return _amount;
     }
+
+   function checkPositionThresholds(
+    address _user
+   ) internal {
+    Position storage position = s_ReceiversPosition[_user];
+    if (!position.active) return;
+
+    uint256 currentPrice = getERC1155TokenPrice();
+    uint256 entryPrice = position.entryPrice;
+
+    uint256 priceRatio = (currentPrice * precision) / entryPrice;
+
+    if (priceRatio < position.buyThreshold) {
+        // Sell the asset
+        closePosition(_user);
+    } else if (priceRatio > position.sellThreshold) {
+        // Buy the asset
+        closePosition(_user);
+        }
+
+    
+   }
+
+   function closePosition(
+        address _user
+    ) internal {
+        Position storage position = s_ReceiversPosition[_user];
+        if (!position.active) {
+            revert DALibrary.DARWA_PositionNotActive();
+        }
+
+        address[] memory reversePath = new address[](2);
+        reversePath[0] = position.path[1];
+        reversePath[1] = position.path[0];
+
         
+        BubbleV1Types.Raffle memory raffle = BubbleV1Types.Raffle(false, BubbleV1Types.Fraction(0, 1), _user);
+        (uint256[] memory amountsOut, ) = _swapBuyOrSell(position.amount, position.amount, reversePath, _user, block.timestamp, raffle);
+        
+        // sell the asset calling the function source
+        s_DARWAFunctionSrc.requestSellAsset(assetName, assetId, _user, amountsOut[amountsOut.length - 1]);
+        
+        // update the userAsset mapping and also the totalAsset state variable
+        uint256 previousAmout = userAssets[_user];
+        userAssets[_user] = previousAmout - position.amount;
+        totalAssetAmont -= position.amount;
+
+        // set the position to false
+        position.active = false;
     }
 
-    // if the current price is more than the maxSellOut, sell.
-    // if the current price is less than the minSellOut, sell.
-    // update the current mapping
-    // update the current total amount for this ID
-
-    /*---------------------------------ClosePosition---------------------------------*/
-
-    /*---------------------------------HealthCheck---------------------------------*/
-    /*PARAM
-    */
-
-    // if the current 1155 price is less than the current price of the function source, substract the difference and mint more token
-    // if the current 1155 token price is greater than the current price of the function source, substract the difference and burn more token.
     function healthCheck(
         address _pool
     ) private {
+        uint256 previousPrice = current1155Price;
         uint256 PriceDiff;
+        
         (, uint256 oraclePrice , , ) = s_DARWAFunctionSrc.getPrice(requestId);
+        _checkZeroAmount(oraclePrice);
+
         if ( oraclePrice < current1155Price) {
             // mint more token
             PriceDiff = current1155Price - oraclePrice;
@@ -306,30 +326,41 @@ contract DAEngine is OwnableUpgradeable, PausableUpgradeable, UUPSUpgradeable {
             PriceDiff = oraclePrice - current1155Price;
             s_DAAsset1155.burn(_pool, assetId, PriceDiff);
         }
-        else {
-            return;
-        }
-    }
+        oraclePrice = current1155Price;
 
-    /*Helper, private and internal functions
-    1. _checkNoZeroAddress done 
-    2. _checkZeroAmount done
-    3. _addLiquid done 
-    4. _removeLiquid done 
-    5. _swap done 
-    6. _authorizeUpgrade done
-    7. _supportToken done
-    */
-    /*-------------------------------------------addLiquid-----------------------------------------------*/
+        emit DALibrary.HealthCheck(_pool, oraclePrice, previousPrice, PriceDiff);
+    }
+    function _updateCurrentPrice(
+        uint256[] memory amount
+    ) private {
+        if (amount.length == 0) {
+            revert DALibrary.DARWA_ZEROAmount();
+        }
+        uint256 AssetAmount = amount[amount.length - 1];
+        uint256 previousPrice = current1155Price;
+        current1155Price = AssetAmount;
+
+        emit DALibrary.PriceUpdated(previousPrice, current1155Price);
+    }
+    function setAssetPair(
+        uint256 _assetPair,
+        address _pair
+    ) external
+    onlyOwner {
+        s_AssetPair[_assetPair] = _pair;
+
+        emit DALibrary.AssetPairSet(_assetPair, _pair);
+    }
 
     function addLiquid(
         // fixme add a check that only supported token and erc155 asset token can be added
-        MonadexV1Types.AddLiquidity memory _addLiquidityParams
-    ) public {
-        monadexRouter.addLiquidity(_addLiquidityParams);
+        BubbleV1Types.AddLiquidity memory _addLiquidityParams
+    ) public returns(uint256 amountA, uint256 amountB, uint256 liquidity) {
+        (amountA, amountB, liquidity) = BubbleRouter.addLiquidity(_addLiquidityParams);
+        
+        emit DALibrary.LiquidityAdded(_addLiquidityParams.tokenA, _addLiquidityParams.tokenB, amountA, amountB, liquidity);
+        return (amountA, amountB, liquidity);
     }
-
-    /*----------------------------------------------removeLiquid------------------------------------------*/
 
     function removeLiquid(
         address _tokenA,
@@ -339,21 +370,27 @@ contract DAEngine is OwnableUpgradeable, PausableUpgradeable, UUPSUpgradeable {
         uint256 _amountBMin,
         address _receiver,
         uint256 _deadline
-    ) internal {
-        monadexRouter.removeLiquidity(_tokenA, _tokenB, _lpTokensToBurn, _amountAMin, _amountBMin, _receiver, _deadline);
+    ) internal returns(uint256 amountA, uint256 amountB){
+        (amountA, amountB) = BubbleRouter.removeLiquidity(_tokenA, _tokenB, _lpTokensToBurn, _amountAMin, _amountBMin, _receiver, _deadline);
+
+        emit DALibrary.LiquidityRemoved(_tokenA, _tokenB, amountA, amountB, _lpTokensToBurn);
+        return (amountA,amountB);
     }
 
     /*----------------------------------------------_swap--------------------------------------------*/
-    function _swapBuy(
+    function _swapBuyOrSell(
         uint256 _amountIn,
         uint256 _amountOutMin,
         address[] memory _path,
         address _receiver,
         uint256 _deadline,
-        MonadexV1Types.Raffle memory _raffle
+        BubbleV1Types.Raffle memory _raffle
     ) internal returns (uint256[] memory _amountOut, uint256 _NFTId) {
-        //FIXME: add a check that enure that the path isnt greater than 2
-        (_amountOut, _NFTId) = monadexRouter.swapExactTokensForTokens(_amountIn,_amountOutMin, _path, _receiver, _deadline, _raffle);
+        if (_path.length != 2) {
+            revert DALibrary.DARWA_InvalidPathLength(_path.length);
+        }
+        (_amountOut, _NFTId) = BubbleRouter.swapExactTokensForTokens(_amountIn,_amountOutMin, _path, _receiver, _deadline, _raffle);
+        _updateCurrentPrice(_amountOut);
     }
 
 
@@ -370,10 +407,85 @@ contract DAEngine is OwnableUpgradeable, PausableUpgradeable, UUPSUpgradeable {
     }
 
     //*----------------------------------------Getter function-------------------------------------------*/
-    function getERC1155TokenPrice(
+    function getAssetPair(
+        uint256 _assetId
+    ) public view returns(address) {
+        return s_AssetPair[_assetId];
+    }
 
-    ) public view returns(uint256 _price){
+    function getERC1155TokenPrice() public view returns(uint256 _price) {
+        (, uint256 oraclePrice, , ) = s_DARWAFunctionSrc.getPrice(requestId);
+        
+        if (oraclePrice > 0) {
+            return oraclePrice;
+        }
+        
+        // Fallback to the current tracked price
+        return current1155Price;
+    }
 
+    // Added getter functions
+    function getRequestId() external view returns (bytes32) {
+        return requestId;
+    }
+
+    function getSupportedTokens() external view returns (IERC20[] memory) {
+        return s_supportedToken;
+    }
+
+    function getSupportedTokenCount() external view returns (uint256) {
+        return s_supportedToken.length;
+    }
+
+    function getUserPosition(address _user) external view returns (
+        uint256 entryPrice,
+        uint256 amount,
+        uint256 buyThreshold,
+        uint256 sellThreshold,
+        bool active
+    ) {
+        Position storage position = s_ReceiversPosition[_user];
+        return (
+            position.entryPrice,
+            position.amount,
+            position.buyThreshold,
+            position.sellThreshold,
+            position.active
+        );
+    }
+
+
+    function getContractBalance(address _token) external view returns (uint256) {
+        return IERC20(_token).balanceOf(address(this));
+    }
+
+    function isPaused() external view returns (bool) {
+        return paused();
+    }
+
+    function isPositionActive(address _user) external view returns (bool) {
+        return s_ReceiversPosition[_user].active;
+    }
+
+    function getProtocolFee() external pure returns (uint256) {
+        return protocolFee_precision;
+    }
+
+    function validatePath(address[] memory _path) external view returns (bool) {
+        if (_path.length != 2) {
+            return false;
+    }   
+    
+        bool validPath = false;
+        for (uint256 i = 0; i < s_supportedToken.length; ++i) {
+            if ((_path[0] == address(s_supportedToken[i]) && _path[1] == ERC1155Token) || 
+                (_path[0] == ERC1155Token && _path[1] == address(s_supportedToken[i]))) {
+                validPath = true;
+                break;
+            }
+        }
+    
+        return validPath;
     }
 }
 

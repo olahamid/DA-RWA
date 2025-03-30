@@ -1,30 +1,12 @@
-// Layout:
-//     - pragma
-//     - imports
-//     - interfaces, libraries, contracts
-//     - type declarations
-//     - state variables
-//     - events
-//     - errors
-//     - modifiers
-//     - functions
-//         - constructor
-//         - receive function (if exists)
-//         - fallback function (if exists)
-//         - external
-//         - public
-//         - internal
-//         - private
-//         - view and pure functions
 
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.22;
+pragma solidity ^0.8.22;
 /**
  * @title RealEstateSource.sol
  * @author Ola Hamid
- * @notice THIS IS AN EXAMPLE CONTRACT THAT USES HARDCODED VALUES FOR CLARITY.
- * THIS IS AN EXAMPLE CONTRACT THAT USES UN-AUDITED CODE.
- * DO NOT USE THIS CODE IN PRODUCTION. (UNIT AND INTEGRATION TEST WIP).
+ * @notice THIS IS AN EXAMPLE CONTRACT THAT USES HARDCODED VALUES FOR CLARITY OF HOW A REALESTATE SOURCE LOOKS LIKE
+ * also better in JS
+ * (UNIT AND INTEGRATION TEST WIP).
  */
 abstract contract RealEstateSource {
     string public getNftMetadata =

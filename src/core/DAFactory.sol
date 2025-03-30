@@ -1,21 +1,3 @@
-// Layout:
-//     - pragma
-//     - imports
-//     - interfaces, libraries, contracts
-//     - type declarations
-//     - state variables
-//     - events
-//     - errors
-//     - modifiers
-//     - functions
-//         - constructor
-//         - receive function (if exists)
-//         - fallback function (if exists)
-//         - external
-//         - public
-//         - internal
-//         - private
-//         - view and pure functions
 
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.22;
@@ -34,7 +16,7 @@ import {DACreateAbleAsset1155} from "../core/DACreateAbleAsset1155.sol";
 import {DALibrary} from "../Library/DALibrary.sol";
 import {DARWAFunctionSrc} from "../FunctionSources/DARWAFunctionSrc.sol";
 import {DAEngine} from "../core/DAEngine.sol";
-import { MonadexV1Types } from "../../monadex-v1-protocol/src/library/MonadexV1Types.sol";
+import { BubbleV1Types } from "../../bubble-v1-protocol/src/library/BubbleV1Types.sol";
 
 
 
@@ -56,7 +38,6 @@ contract DAFactory is Ownable {
     address private s_ChainLinkOracle;
     address private i_engineAddress;
     uint256 private s_TotalAssetScore;
-
     uint256 private s_Fee;
 
     
@@ -84,7 +65,7 @@ contract DAFactory is Ownable {
         DALibrary.AssetCreationParams memory _assetCreationParams,
         DALibrary.APIAssetDetails memory _assetDetails,
         DALibrary.FunctionSourceConstructorArgs memory _functionSourceConstructorArgs,
-        MonadexV1Types.AddLiquidity memory _addLiquidityParams
+        BubbleV1Types.AddLiquidity memory _addLiquidityParams
     ) external 
     returns(uint256, bytes32 AssetCurrentPrice)
     {
@@ -182,7 +163,7 @@ contract DAFactory is Ownable {
         address FunctionSrc,
         uint64 nonce,
         DALibrary.AssetCreationParams memory _assetCreationParams,
-        MonadexV1Types.AddLiquidity memory _addLiquidityParams
+        BubbleV1Types.AddLiquidity memory _addLiquidityParams
     ) public returns(DAEngine engine) {
         bytes32 salt = keccak256(abi.encodePacked(_assetCreationParams.ids, nonce++, s_TotalAssetScore));
 

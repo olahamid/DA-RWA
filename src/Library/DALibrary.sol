@@ -19,6 +19,9 @@ library DALibrary {
     error DARWA_InvalidAssetRegistration( bool isAssetRegistered);
     error DARWA_InvalidAssetRegistrastion(bool isAssetActive, bool isPlatfromActive);
     error DARWA_InvalidPathAddress(address path1, address path2);
+    error DARWA_InvalidPathLength(uint256 pathLength);
+    error DARWA_PositionNotActive();
+    error DARWA_AssetKilled();
     error DARWA_InvalidPrecision();
     error DARWA_ZeroAddress();
     error DARWA_ZEROAmount();
@@ -31,6 +34,19 @@ library DALibrary {
     event PlatformKilled(address indexed platformAddress);
     event AssetKilled(address indexed platformAddress, uint16 assetId);
     event FunctionSourceCreated(address indexed functionSource, bytes32 jobId);
+
+    // ENGINE contract events
+    event Initialized(address indexed DAAsset1155, address indexed FunctionSrc, uint256 assetId, address supportedToken, bytes32 requestId, string assetName);
+    event DirectBuy(address indexed buyer, uint256 amountIn, uint256 amountOut, uint256 timestamp);
+    event DirectSell(address indexed seller, uint256 amountIn, uint256 amountOut, uint256 timestamp);
+    event PositionTaken(address indexed user, uint256 amount, uint256 entryPrice, uint256 buyThreshold, uint256 sellThreshold);
+    event PositionClosed(address indexed user, uint256 amount, uint256 exitPrice, uint256 pnl);
+    event HealthCheck(address indexed pool, uint256 oraclePrice, uint256 currentPrice, uint256 priceDiff);
+    event PriceUpdated(uint256 previousPrice, uint256 newPrice);
+    event AssetPairSet(uint256 indexed assetId, address indexed pair);
+    event SupportedTokenAdded(address indexed token);
+    event LiquidityAdded(address indexed tokenA, address indexed tokenB, uint256 amountA, uint256 amountB, uint256 liquidity);
+    event LiquidityRemoved(address indexed tokenA, address indexed tokenB, uint256 amountA, uint256 amountB, uint256 liquidity);
 
         /////////////////
     /// Events /////

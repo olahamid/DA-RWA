@@ -1,6 +1,6 @@
 
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.22;
+pragma solidity ^0.8.22;
 
 import {AccessControl} from "../../../lib/openzeppelin-contracts/contracts/access/AccessControl.sol";
 import {Pausable} from "../../../lib/openzeppelin-contracts/contracts/utils/Pausable.sol";
@@ -20,6 +20,7 @@ contract DARWARegistry is AccessControl, Pausable, IDARWARegistry {
     mapping (address => mapping (uint16 assetID => bytes platformBytes)) s_AssetBytes;
     mapping (bytes => DALibrary.Asset) s_Assets;
     mapping (address sourceAssets => bool isApproved) s_approveSourceAsset;
+    mapping (uint256 => bool) public  s_AssetKilled;
 
     bytes32 public constant s_DAAssetAdmins = keccak256("s_DAAssetAdmins");
     bytes32 public constant s_DAAssetPlatformAdmins = keccak256("s_DAAssetPlatformAdmins");
@@ -132,8 +133,10 @@ contract DARWARegistry is AccessControl, Pausable, IDARWARegistry {
     {
         bytes memory platformBytes = s_PlatformBytes[_platformAddress][platformId];
         delete s_Assets[platformBytes];
+        s_AssetKilled[platformId] = true;
         emit DALibrary.AssetKilled(_platformAddress, platformId);
     }
+
 
     function setAdmin(
         address _admin
@@ -229,14 +232,7 @@ contract DARWARegistry is AccessControl, Pausable, IDARWARegistry {
         return s_PlatformBytes[platformCreator][platformId];
     }
 
-    function isPlatformActive(
-        address platformAddress,
-        uint16 _platformId
-    ) 
-    external 
-    view 
-    override 
-    returns (bool) {
+    function isPlatformActive(address platformAddress,uint16 _platformId) external view override returns (bool) {
         bytes memory platformBytes = s_PlatformBytes[platformAddress][_platformId];
         return s_Platforms[platformBytes].isPlatformActive;
     }
@@ -253,50 +249,30 @@ contract DARWARegistry is AccessControl, Pausable, IDARWARegistry {
     }
     
 
-    function getFeeOnPlatform(
-
-    ) 
-    external 
-    view 
-    override 
-    returns (uint256) {
+    function getFeeOnPlatform() external view override returns (uint256) {
         return s_FeeOnPlatform;
     }
 
-    function getFeeOnAsset(
+    function getAssetKilled(uint256 _iD) external view returns (bool) {
+        return s_AssetKilled[_iD];
+    }
 
-    ) 
-    external 
-    view 
-    override 
-    returns (uint256) {
+    function getFeeOnAsset() external view override returns (uint256) {
         return s_FeeOnAsset;
     }
 
-    function pause(
-    ) 
-    external 
-    onlyRole(s_DAAssetPlatformAdmins) {
+    function pause() external onlyRole(s_DAAssetPlatformAdmins) {
         _pause();
     }
 
-    function unPause(
-    ) 
-    external 
-    onlyRole(s_DAAssetPlatformAdmins) {
+    function unPause() external onlyRole(s_DAAssetPlatformAdmins) {
         _unpause();
     }
-    function _pause(
-    ) 
-    internal
-    override {
+    function _pause() internal override {
         super._pause();
     }
 
-    function _unpause(
-    ) 
-    internal 
-    override {
+    function _unpause() internal override {
         super._unpause();
     }
 }

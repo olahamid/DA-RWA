@@ -2,5 +2,11 @@
 src = "src"
 out = "out"
 libs = ["lib"]
+srcs = ["src"]
+
+remappings = [
+    "@bubble = bubble-v1-protocol/interfaces/",
+    "@pythnetwork = bubble-v1-protocol/node_modules/@pythnetwork/"
+]
 
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options

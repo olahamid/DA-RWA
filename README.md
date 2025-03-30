@@ -9,7 +9,7 @@
 <!-- PROJECT LOGO -->
 <br />
 <div align="center">
-  <h3 align="center">RWA Tokenization Platform</h3>
+  <h3 align="center">DA-RWA Tokenization Platform</h3>
 
   <p align="center">
     A modular platform for tokenizing real-world assets (RWA) using ERC1155
@@ -48,7 +48,7 @@
 <!-- ABOUT THE PROJECT -->
 ## About The Project
 
-The OA-RWA Tokenization Platform is a flexible infrastructure that enables various RWA platforms to tokenize real-world assets. Using ERC1155, it supports both unique asset representation (NFTs) and fractionalized ownership tokens, making it suitable for a wide range of assets from luxury watches to real estate,vehicles, gold, daimonds, etc. making it possible for all real-world asset to be tokenised on the blockchain.
+The DA-RWA Tokenization Platform is a flexible infrastructure that enables various RWA platforms to tokenize real-world assets. Using ERC1155, it supports both unique asset representation (NFTs) and fractionalized ownership tokens, making it suitable for a wide range of assets from luxury watches to real estate,vehicles, gold, daimonds, etc. making it possible for all real-world asset to be tokenised on the blockchain.
 
 ### Built With
 
@@ -78,7 +78,7 @@ forge install
 ```
 3. Run Build
 ```shell
-forge build
+forge build --via-ir
 ```
 4. Run tests
 ```shell
@@ -100,7 +100,7 @@ The platform consists of several key components:
 <!-- ROADMAP -->
 ## Roadmap
 
-- [ ] SMART CONTRACT DEVELOPMENT
+- [x] SMART CONTRACT DEVELOPMENT
 - [ ] UNIT/INTEGRATION TEST DEVELOPMENT
 - [ ] SCRIPT DEVELOPMENT
 
